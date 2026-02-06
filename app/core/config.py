@@ -13,8 +13,8 @@ class Settings(BaseSettings):
     # Database
     DATABASE_URL: str = "sqlite:///./evalyn_hr.db"
     
-    # OpenAI
-    OPENAI_API_KEY: str = ""
+    # Google Gemini AI
+    GEMINI_API_KEY: str = ""
     
     # Email Configuration (SMTP)
     SMTP_HOST: str = "smtp.gmail.com"
@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     
     # AI Agent Settings
     CV_SCREENING_TOP_CANDIDATES: int = 10
-    MINIMUM_MATCH_SCORE: float = 60.0
+    MINIMUM_MATCH_SCORE: float = 75.0  # Candidates with 75% or above are automatically selected
     
     class Config:
         env_file = ".env"

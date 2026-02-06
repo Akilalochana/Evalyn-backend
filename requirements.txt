@@ -12,8 +12,8 @@ aiosqlite>=0.19.0  # For async SQLite (optional)
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# OpenAI for AI screening
-openai>=1.10.0
+# Google Gemini for AI screening
+google-generativeai>=0.3.0
 
 # CV/Document parsing
 pdfplumber>=0.10.0

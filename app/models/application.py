@@ -39,12 +39,37 @@ class Application(Base):
     # Cover Letter
     cover_letter = Column(Text)
     
-    # AI Screening Results
+    # AI Screening Results (Original)
     ai_score = Column(Float, default=0.0)  # Match percentage (0-100)
     ai_summary = Column(Text)  # AI generated summary
     ai_strengths = Column(Text)  # Matching strengths
     ai_weaknesses = Column(Text)  # Gaps or concerns
     skills_matched = Column(Text)  # JSON list of matched skills
+    
+    # ==== NEW: Bias-Aware Screening ====
+    blind_score = Column(Float, nullable=True)  # Score without personal data
+    full_score = Column(Float, nullable=True)  # Score with full CV
+    bias_delta = Column(Float, nullable=True)  # Difference (full - blind)
+    blind_evaluation = Column(Text, nullable=True)  # Blind eval summary
+    full_evaluation = Column(Text, nullable=True)  # Full eval summary
+    bias_analysis = Column(Text, nullable=True)  # JSON: detailed bias analysis
+    
+    # ==== NEW: Skill-Gap Detection ====
+    required_skills = Column(Text, nullable=True)  # JSON: skills from job
+    candidate_skills = Column(Text, nullable=True)  # JSON: skills from CV
+    missing_skills = Column(Text, nullable=True)  # JSON: skills candidate lacks
+    weak_skills = Column(Text, nullable=True)  # JSON: skills needing improvement
+    skill_gap_feedback = Column(Text, nullable=True)  # Feedback for candidate
+    skill_match_percentage = Column(Float, nullable=True)  # Skills match %
+    
+    # ==== NEW: Project-Based Evaluation ====
+    github_url = Column(String(500), nullable=True)  # GitHub repo link
+    project_file_path = Column(String(500), nullable=True)  # Uploaded project path
+    project_score = Column(Float, nullable=True)  # Project quality score (0-100)
+    code_quality_score = Column(Float, nullable=True)  # Code quality (0-100)
+    project_feedback = Column(Text, nullable=True)  # AI generated project feedback
+    project_analysis = Column(Text, nullable=True)  # JSON: detailed project analysis
+    final_composite_score = Column(Float, nullable=True)  # CV + Project combined
     
     # Status Tracking
     status = Column(String(50), default=ApplicationStatus.PENDING.value)
