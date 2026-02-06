@@ -1,0 +1,40 @@
+# Evalyn HR Automation Agent - Dependencies
+
+# Web Framework
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+
+# Database
+sqlalchemy>=2.0.25
+aiosqlite>=0.19.0  # For async SQLite (optional)
+
+# Pydantic for validation
+pydantic>=2.5.0
+pydantic-settings>=2.1.0
+
+# OpenAI for AI screening
+openai>=1.10.0
+
+# CV/Document parsing
+pdfplumber>=0.10.0
+python-docx>=1.1.0
+
+# Email
+aiosmtplib>=3.0.0  # For async email (optional)
+
+# File uploads
+python-multipart>=0.0.6
+
+# Environment variables
+python-dotenv>=1.0.0
+
+# HTTP client (for webhooks/integrations)
+httpx>=0.26.0
+
+# Date/time handling
+python-dateutil>=2.8.2
+
+# Testing (optional)
+pytest>=7.4.0
+pytest-asyncio>=0.23.0
+httpx>=0.26.0  # For test client
