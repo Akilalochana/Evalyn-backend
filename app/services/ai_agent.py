@@ -1,31 +1,38 @@
 """
 AI Agent for CV Screening and Candidate Evaluation
-Uses Google Gemini to analyze CVs against job requirements
+Uses Google Gemini Flash to analyze CVs against job requirements
+Supports Vercel Blob storage for PDF resumes
 """
 import json
-from typing import List, Tuple
+import uuid
+from typing import List, Tuple, Optional
 import google.generativeai as genai
 from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.models.application import Application, ApplicationStatus
 from app.models.job import Job
-from datetime import datetime
+from app.models.interview import Interview, InterviewRound, InterviewStatus
+from app.services.vercel_blob_service import vercel_blob_service
+from datetime import datetime, timedelta
 
 
 class AIScreeningAgent:
     """
     AI Agent that:
-    1. Analyzes CVs against job requirements using Google Gemini
-    2. Scores candidates based on match percentage
-    3. Identifies strengths and gaps
-    4. Shortlists candidates with 75% or above scores
+    1. Downloads CVs from Vercel Blob storage
+    2. Analyzes CVs against job requirements using Google Gemini Flash
+    3. Scores candidates based on match percentage
+    4. Identifies strengths and gaps
+    5. Shortlists candidates with 75% or above scores (Top 10)
+    6. Sends emails to shortlisted candidates
+    7. Schedules Round 2 interviews with SSE
     """
     
     def __init__(self):
-        # Configure Gemini API
+        # Configure Gemini API with Flash model (free tier)
         genai.configure(api_key=settings.GEMINI_API_KEY)
         self.model = genai.GenerativeModel(
-            model_name='gemini-1.5-flash',
+            model_name=settings.GEMINI_MODEL,  # gemini-1.5-flash
             generation_config={
                 "temperature": 0.3,
                 "top_p": 0.95,
@@ -34,31 +41,50 @@ class AIScreeningAgent:
             }
         )
     
-    def extract_cv_text(self, file_path: str) -> str:
-        """Extract text from CV file (PDF or DOCX)"""
+    def extract_cv_text(self, file_path_or_url: str) -> str:
+        """
+        Extract text from CV file
+        Supports:
+        - Vercel Blob URLs (https://...)
+        - Local file paths (for backward compatibility)
+        - Relative API paths (/api/uploads/...)
+        """
         import os
         
-        if not file_path or not os.path.exists(file_path):
+        if not file_path_or_url:
             return ""
         
-        ext = os.path.splitext(file_path)[1].lower()
+        # Skip NULL values
+        if file_path_or_url.upper() == "NULL":
+            return ""
+        
+        # Check if it's a Vercel Blob URL or any HTTP URL
+        if file_path_or_url.startswith('http') or file_path_or_url.startswith('/api/'):
+            # Use Vercel Blob service to download and extract
+            return vercel_blob_service.get_cv_text_from_url(file_path_or_url)
+        
+        # Local file handling (backward compatibility)
+        if not os.path.exists(file_path_or_url):
+            return ""
+        
+        ext = os.path.splitext(file_path_or_url)[1].lower()
         
         try:
             if ext == ".pdf":
                 import pdfplumber
                 text = ""
-                with pdfplumber.open(file_path) as pdf:
+                with pdfplumber.open(file_path_or_url) as pdf:
                     for page in pdf.pages:
                         text += page.extract_text() or ""
                 return text
             
             elif ext in [".docx", ".doc"]:
                 from docx import Document
-                doc = Document(file_path)
+                doc = Document(file_path_or_url)
                 return "\n".join([para.text for para in doc.paragraphs])
             
             elif ext == ".txt":
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path_or_url, "r", encoding="utf-8") as f:
                     return f.read()
             
             else:
@@ -180,11 +206,12 @@ Be objective, thorough, and fair in your assessment. Focus on technical skills, 
     def screen_applications(
         self, 
         db: Session, 
-        job_id: int, 
+        job_id: str, 
         top_n: int = None
     ) -> List[Application]:
         """
         Screen all pending applications for a job using Gemini AI
+        - Downloads CVs from Vercel Blob storage
         - Analyzes each CV against job requirements
         - Scores candidates (0-100)
         - Automatically selects candidates with 75% or above
@@ -200,82 +227,261 @@ Be objective, thorough, and fair in your assessment. Focus on technical skills, 
         
         # Get all pending applications
         applications = db.query(Application).filter(
-            Application.job_id == job_id,
+            Application.jobId == job_id,
             Application.status == ApplicationStatus.PENDING.value
         ).all()
         
         if not applications:
             return []
         
-        print(f"📝 Starting AI screening for {len(applications)} applications...")
+        print(f"[INFO] Starting AI screening for {len(applications)} applications...")
+        
+        # Store screening results in memory (NeonDB may not have these columns)
+        screening_results = {}
         
         # Screen each application
         for idx, app in enumerate(applications, 1):
-            print(f"  [{idx}/{len(applications)}] Analyzing {app.full_name}...")
+            print(f"  [{idx}/{len(applications)}] Analyzing {app.name}...")
             
-            # Extract CV text if not already done
-            if not app.cv_text and app.cv_file_path:
-                app.cv_text = self.extract_cv_text(app.cv_file_path)
+            # Extract CV text from Vercel Blob URL
+            cv_text = ""
+            if app.resumeUrl:
+                cv_text = self.extract_cv_text(app.resumeUrl)
             
             # Analyze with Gemini AI
-            analysis = self.analyze_cv(app.cv_text or "", job)
+            analysis = self.analyze_cv(cv_text, job)
             
-            # Update application with results
-            app.ai_score = analysis.get("score", 0)
-            app.ai_summary = analysis.get("summary", "")
-            app.ai_strengths = analysis.get("strengths", "")
-            app.ai_weaknesses = analysis.get("weaknesses", "")
-            app.skills_matched = json.dumps(analysis.get("skills_matched", []))
-            app.status = ApplicationStatus.SCREENING.value
-            app.screening_completed_at = datetime.utcnow()
+            # Store results in memory (not in DB - columns may not exist)
+            score = analysis.get("score", 0)
+            screening_results[app.id] = {
+                "score": score,
+                "summary": analysis.get("summary", ""),
+                "strengths": analysis.get("strengths", ""),
+                "weaknesses": analysis.get("weaknesses", ""),
+                "skills_matched": analysis.get("skills_matched", []),
+                "cv_text": cv_text
+            }
             
-            print(f"     ✓ Score: {app.ai_score}%")
-        
-        db.commit()
+            # Set transient attributes for later use
+            app._ai_score = score
+            app._ai_summary = analysis.get("summary", "")
+            app._ai_strengths = analysis.get("strengths", "")
+            app._ai_weaknesses = analysis.get("weaknesses", "")
+            app._skills_matched = json.dumps(analysis.get("skills_matched", []))
+            app._cv_text = cv_text
+            
+            print(f"     [OK] Score: {score}%")
         
         # Sort by score and get top N
-        sorted_apps = sorted(applications, key=lambda x: x.ai_score or 0, reverse=True)
+        sorted_apps = sorted(applications, key=lambda x: screening_results.get(x.id, {}).get("score", 0), reverse=True)
         top_candidates = sorted_apps[:top_n]
         
         # IMPORTANT: Mark candidates with 75% or above as SHORTLISTED
+        # Only update the 'status' column which exists in NeonDB
         shortlisted_count = 0
         for app in top_candidates:
-            if app.ai_score >= settings.MINIMUM_MATCH_SCORE:
+            score = screening_results.get(app.id, {}).get("score", 0)
+            if score >= settings.MINIMUM_MATCH_SCORE:
                 app.status = ApplicationStatus.SHORTLISTED.value
                 shortlisted_count += 1
-                print(f"  ✓ {app.full_name}: {app.ai_score}% - SELECTED (≥75%)")
+                print(f"  [+] {app.name}: {score}% - SELECTED (>=75%)")
             else:
-                print(f"  ✗ {app.full_name}: {app.ai_score}% - Not selected (<75%)")
+                print(f"  [-] {app.name}: {score}% - Not selected (<75%)")
         
-        # Mark others as rejected
+        # Mark others as rejected  
         for app in sorted_apps[top_n:]:
+            score = screening_results.get(app.id, {}).get("score", 0)
             app.status = ApplicationStatus.REJECTED.value
-            print(f"  ✗ {app.full_name}: {app.ai_score}% - REJECTED (not in top {top_n})")
+            print(f"  [-] {app.name}: {score}% - REJECTED (not in top {top_n})")
         
         db.commit()
         
-        print(f"\n✅ Screening complete: {shortlisted_count}/{len(top_candidates)} top candidates selected (≥75%)")
+        print(f"\n[DONE] Screening complete: {shortlisted_count}/{len(top_candidates)} top candidates selected (>=75%)")
         
         return top_candidates
     
     def get_candidate_summary(self, application: Application) -> str:
         """Generate a brief summary for interview preparation"""
+        score = getattr(application, '_ai_score', 0)
+        summary = getattr(application, '_ai_summary', 'N/A')
+        strengths = getattr(application, '_ai_strengths', 'N/A')
+        weaknesses = getattr(application, '_ai_weaknesses', 'N/A')
+        skills = getattr(application, '_skills_matched', '[]')
+        
         return f"""
-Candidate: {application.full_name}
+Candidate: {application.name}
 Email: {application.email}
 Phone: {application.phone or 'N/A'}
-Match Score: {application.ai_score}%
+Match Score: {score}%
 
-AI Summary: {application.ai_summary}
+AI Summary: {summary}
 
 Strengths:
-{application.ai_strengths}
+{strengths}
 
 Areas to Probe:
-{application.ai_weaknesses}
+{weaknesses}
 
-Skills Matched: {application.skills_matched}
+Skills Matched: {skills}
 """
+    
+    def run_full_hr_workflow(
+        self,
+        db: Session,
+        job_id: str,
+        sse_name: str = None,
+        sse_email: str = None,
+        interview_start_datetime: datetime = None
+    ) -> dict:
+        """
+        Run the complete HR automation workflow:
+        1. Screen all pending applications with AI
+        2. Shortlist top 10 candidates (≥75% score)
+        3. Send emails to shortlisted candidates (Round 1 passed)
+        4. Schedule Round 2 interviews with SSE
+        5. Send interview invitations
+        
+        Returns: Summary of actions taken
+        """
+        from app.services.email_service import email_service
+        
+        # Use defaults if not provided
+        sse_name = sse_name or settings.DEFAULT_SSE_NAME
+        sse_email = sse_email or settings.DEFAULT_SSE_EMAIL
+        
+        # Default interview time: next business day at 9 AM
+        if interview_start_datetime is None:
+            tomorrow = datetime.now() + timedelta(days=1)
+            # Skip to Monday if weekend
+            while tomorrow.weekday() >= 5:  # 5=Saturday, 6=Sunday
+                tomorrow += timedelta(days=1)
+            interview_start_datetime = tomorrow.replace(hour=9, minute=0, second=0, microsecond=0)
+        
+        result = {
+            "job_id": job_id,
+            "workflow_started_at": datetime.utcnow().isoformat(),
+            "steps": []
+        }
+        
+        # Step 1: Screen applications
+        print("\n[STEP 1] AI Screening of Applications")
+        print("=" * 50)
+        
+        try:
+            shortlisted = self.screen_applications(db, job_id)
+            result["steps"].append({
+                "step": 1,
+                "action": "AI Screening",
+                "status": "completed",
+                "candidates_screened": len(shortlisted),
+                "shortlisted": len([a for a in shortlisted if a.status == ApplicationStatus.SHORTLISTED.value])
+            })
+        except Exception as e:
+            result["steps"].append({
+                "step": 1,
+                "action": "AI Screening",
+                "status": "failed",
+                "error": str(e)
+            })
+            return result
+        
+        # Get shortlisted candidates (no order_by since ai_score is not in DB)
+        shortlisted_apps = db.query(Application).filter(
+            Application.jobId == job_id,
+            Application.status == ApplicationStatus.SHORTLISTED.value
+        ).all()
+        
+        if not shortlisted_apps:
+            result["message"] = "No candidates met the minimum score threshold (75%)"
+            return result
+        
+        # Step 2: Send shortlist notification emails
+        print("\n[STEP 2] Sending Shortlist Notifications")
+        print("=" * 50)
+        
+        job = db.query(Job).filter(Job.id == job_id).first()
+        email_results = email_service.send_bulk_shortlist_notifications(shortlisted_apps, job)
+        
+        # Update status to round1_passed
+        for app in shortlisted_apps:
+            app.status = ApplicationStatus.ROUND1_PASSED.value
+        db.commit()
+        
+        result["steps"].append({
+            "step": 2,
+            "action": "Send Shortlist Emails",
+            "status": "completed",
+            "emails_sent": email_results["success"],
+            "emails_failed": email_results["failed"]
+        })
+        
+        # Step 3: Schedule Round 2 interviews
+        print("\n[STEP 3] Scheduling Round 2 Interviews with SSE")
+        print("=" * 50)
+        
+        interviews_scheduled = []
+        current_time = interview_start_datetime
+        
+        for app in shortlisted_apps:
+            # Generate unique interview ID
+            interview_id = str(uuid.uuid4())[:25]
+            
+            # Create interview
+            interview = Interview(
+                id=interview_id,
+                applicationId=app.id,
+                round=InterviewRound.ROUND2.value,
+                interviewerName=sse_name,
+                interviewerEmail=sse_email,
+                scheduledAt=current_time,
+                durationMinutes=settings.INTERVIEW_DURATION_MINUTES,
+                meetingLink=f"https://meet.google.com/ai-hr-{interview_id[:8]}",  # Placeholder
+                status=InterviewStatus.SCHEDULED.value
+            )
+            
+            db.add(interview)
+            
+            # Update application status
+            app.status = ApplicationStatus.ROUND2_SCHEDULED.value
+            
+            # Send interview invitation email
+            email_service.send_interview_invitation(app, interview, job)
+            
+            interviews_scheduled.append({
+                "candidate": app.name,
+                "email": app.email,
+                "scheduled_at": current_time.isoformat(),
+                "interviewer": sse_name
+            })
+            
+            print(f"  [+] Scheduled: {app.name} at {current_time}")
+            
+            # Move to next time slot
+            current_time += timedelta(
+                minutes=settings.INTERVIEW_DURATION_MINUTES + settings.INTERVIEW_GAP_MINUTES
+            )
+        
+        db.commit()
+        
+        result["steps"].append({
+            "step": 3,
+            "action": "Schedule Interviews",
+            "status": "completed",
+            "interviews_scheduled": len(interviews_scheduled),
+            "details": interviews_scheduled
+        })
+        
+        result["workflow_completed_at"] = datetime.utcnow().isoformat()
+        result["message"] = f"Successfully processed {len(shortlisted_apps)} candidates"
+        
+        print("\n" + "=" * 50)
+        print("[DONE] HR AUTOMATION WORKFLOW COMPLETED!")
+        print(f"   - Candidates screened and shortlisted: {len(shortlisted_apps)}")
+        print(f"   - Notification emails sent: {email_results['success']}")
+        print(f"   - Interviews scheduled: {len(interviews_scheduled)}")
+        print("=" * 50)
+        
+        return result
 
 
 # Singleton instance

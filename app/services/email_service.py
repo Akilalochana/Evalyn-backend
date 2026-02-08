@@ -76,7 +76,7 @@ class EmailService:
                     <h1>🎉 Congratulations!</h1>
                 </div>
                 <div class="content">
-                    <p>Dear <strong>{application.full_name}</strong>,</p>
+                    <p>Dear <strong>{application.name}</strong>,</p>
                     
                     <p>We are pleased to inform you that you have successfully passed the 
                     <strong>first round of screening</strong> for the position of 
@@ -124,7 +124,7 @@ class EmailService:
         job: Job
     ) -> bool:
         """Send interview schedule/invitation email"""
-        scheduled_time = interview.scheduled_at.strftime("%A, %B %d, %Y at %I:%M %p")
+        scheduled_time = interview.scheduledAt.strftime("%A, %B %d, %Y at %I:%M %p")
         
         subject = f"Interview Scheduled: {job.title} - Round 2 at {self.company_name}"
         
@@ -148,7 +148,7 @@ class EmailService:
                     <h1>📅 Interview Scheduled</h1>
                 </div>
                 <div class="content">
-                    <p>Dear <strong>{application.full_name}</strong>,</p>
+                    <p>Dear <strong>{application.name}</strong>,</p>
                     
                     <p>Your Round 2 interview for <strong>{job.title}</strong> has been scheduled.</p>
                     
@@ -157,10 +157,10 @@ class EmailService:
                         <p><strong>Position:</strong> {job.title}</p>
                         <p><strong>Round:</strong> {interview.round.replace('round', 'Round ').title()}</p>
                         <p><strong>Date & Time:</strong> {scheduled_time}</p>
-                        <p><strong>Duration:</strong> {interview.duration_minutes} minutes</p>
-                        <p><strong>Interviewer:</strong> {interview.interviewer_name}</p>
+                        <p><strong>Duration:</strong> {interview.durationMinutes} minutes</p>
+                        <p><strong>Interviewer:</strong> {interview.interviewerName}</p>
                         {"<p><strong>Location:</strong> " + interview.location + "</p>" if interview.location else ""}
-                        {"<p><strong>Meeting Link:</strong> <a href='" + interview.meeting_link + "'>" + interview.meeting_link + "</a></p>" if interview.meeting_link else ""}
+                        {"<p><strong>Meeting Link:</strong> <a href='" + interview.meetingLink + "'>" + interview.meetingLink + "</a></p>" if interview.meetingLink else ""}
                     </div>
                     
                     <h3>📝 Preparation Tips</h3>
@@ -171,7 +171,7 @@ class EmailService:
                         <li>Prepare examples of your past work</li>
                     </ul>
                     
-                    {f'<a href="{interview.meeting_link}" class="btn">Join Interview Meeting</a>' if interview.meeting_link else ''}
+                    {f'<a href="{interview.meetingLink}" class="btn">Join Interview Meeting</a>' if interview.meetingLink else ''}
                     
                     <p>If you need to reschedule, please reply to this email at least 24 hours before the scheduled time.</p>
                     
@@ -217,7 +217,7 @@ class EmailService:
                     <h1>Application Update</h1>
                 </div>
                 <div class="content">
-                    <p>Dear <strong>{application.full_name}</strong>,</p>
+                    <p>Dear <strong>{application.name}</strong>,</p>
                     
                     <p>Thank you for your interest in the <strong>{job.title}</strong> position 
                     at {self.company_name} and for taking the time to apply.</p>

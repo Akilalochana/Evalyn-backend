@@ -76,37 +76,33 @@ Evalyn-backend/
 │   ├── api/
 │   │   ├── __init__.py
 │   │   └── routes/
-│   │       ├── __init__.py
 │   │       ├── jobs.py         # Job vacancy CRUD endpoints
 │   │       ├── applications.py # Application & CV processing
-│   │       └── interviews.py   # Interview scheduling
+│   │       ├── interviews.py   # Interview scheduling
+│   │       ├── hr_automation.py # 🆕 Complete HR Automation Workflow
+│   │       └── enhanced_screening.py
 │   │
 │   ├── core/
-│   │   ├── __init__.py
-│   │   ├── config.py           # Application settings
-│   │   └── database.py         # Database connection
+│   │   ├── config.py           # Application settings (NeonDB, Gemini, Vercel Blob)
+│   │   └── database.py         # Database connection (PostgreSQL/NeonDB)
 │   │
 │   ├── models/
-│   │   ├── __init__.py
-│   │   ├── job.py              # Job model
-│   │   ├── application.py      # Application/Candidate model
+│   │   ├── job.py              # JobPost model (NeonDB)
+│   │   ├── application.py      # JobApplication model (NeonDB)
 │   │   └── interview.py        # Interview model
 │   │
 │   ├── schemas/
-│   │   ├── __init__.py
 │   │   ├── job.py              # Job Pydantic schemas
 │   │   ├── application.py      # Application schemas
 │   │   └── interview.py        # Interview schemas
 │   │
 │   └── services/
-│       ├── __init__.py
-│       ├── ai_agent.py         # AI CV screening agent
+│       ├── ai_agent.py         # AI CV screening agent (Gemini Flash)
 │       ├── email_service.py    # Email notifications
-│       └── interview_scheduler.py  # Interview scheduling
+│       ├── interview_scheduler.py
+│       └── vercel_blob_service.py  # 🆕 Vercel Blob PDF handling
 │
-├── uploads/
-│   └── cvs/                    # Uploaded CV files
-│
+├── .env                        # Environment variables (create from .env.example)
 ├── .env.example                # Environment variables template
 ├── requirements.txt            # Python dependencies
 └── README.md                   # This file
@@ -135,10 +131,25 @@ pip install -r requirements.txt
 ```bash
 # Copy example env file
 cp .env.example .env
+```
 
-# Edit .env with your settings:
-# - OPENAI_API_KEY (required for AI screening)
-# - SMTP settings (for email notifications)
+Edit `.env` with your settings:
+
+```env
+# NeonDB PostgreSQL connection
+DATABASE_URL=postgresql://user:password@ep-xxx.aws.neon.tech/neondb?sslmode=require
+
+# Google Gemini AI (free tier)
+GEMINI_API_KEY=your_gemini_api_key_here
+GEMINI_MODEL=gemini-1.5-flash
+
+# Vercel Blob Storage
+VERCEL_BLOB_READ_WRITE_TOKEN=vercel_blob_rw_xxx
+VERCEL_BLOB_BASE_URL=https://your-store.public.blob.vercel-storage.com
+
+# Gmail SMTP
+SMTP_USER=your_email@gmail.com
+SMTP_PASSWORD=your_app_password
 ```
 
 ### 3. Run the Server
@@ -146,8 +157,7 @@ cp .env.example .env
 ```bash
 # Development mode
 uvicorn app.main:app --reload --port 8000
-
-# Or using Python
+```
 python -m app.main
 ```
 
@@ -293,5 +303,6 @@ requests.post(
 ## 📄 License
 
 MIT License - Your Company
-#   E v a l y n - b a c k e n d  
+#   E v a l y n - b a c k e n d 
+ 
  

@@ -1,6 +1,7 @@
 """
 Job Vacancy API Endpoints
 HR Dashboard uses these to create and manage job postings
+Updated for NeonDB JobPost table compatibility
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -44,9 +45,9 @@ def list_jobs(
     query = db.query(Job)
     
     if is_active is not None:
-        query = query.filter(Job.is_active == is_active)
+        query = query.filter(Job.isActive == is_active)  # NeonDB field name
     if is_published is not None:
-        query = query.filter(Job.is_published == is_published)
+        query = query.filter(Job.isPublished == is_published)  # NeonDB field name
     
     jobs = query.offset(skip).limit(limit).all()
     
@@ -55,7 +56,7 @@ def list_jobs(
     for job in jobs:
         job_dict = JobResponse.model_validate(job)
         job_dict.application_count = db.query(func.count(Application.id)).filter(
-            Application.job_id == job.id
+            Application.jobId == job.id  # NeonDB field name
         ).scalar()
         result.append(job_dict)
     
@@ -63,7 +64,7 @@ def list_jobs(
 
 
 @router.get("/{job_id}", response_model=JobResponse)
-def get_job(job_id: int, db: Session = Depends(get_db)):
+def get_job(job_id: str, db: Session = Depends(get_db)):  # Changed to string for NeonDB
     """Get a specific job by ID"""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -71,14 +72,14 @@ def get_job(job_id: int, db: Session = Depends(get_db)):
     
     job_response = JobResponse.model_validate(job)
     job_response.application_count = db.query(func.count(Application.id)).filter(
-        Application.job_id == job.id
+        Application.jobId == job.id  # NeonDB field name
     ).scalar()
     
     return job_response
 
 
 @router.put("/{job_id}", response_model=JobResponse)
-def update_job(job_id: int, job_data: JobUpdate, db: Session = Depends(get_db)):
+def update_job(job_id: str, job_data: JobUpdate, db: Session = Depends(get_db)):  # Changed to string
     """Update a job vacancy"""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -94,7 +95,7 @@ def update_job(job_id: int, job_data: JobUpdate, db: Session = Depends(get_db)):
 
 
 @router.delete("/{job_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_job(job_id: int, db: Session = Depends(get_db)):
+def delete_job(job_id: str, db: Session = Depends(get_db)):  # Changed to string
     """Delete a job vacancy"""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
@@ -106,7 +107,7 @@ def delete_job(job_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{job_id}/publish", response_model=JobResponse)
-def publish_job(job_id: int, db: Session = Depends(get_db)):
+def publish_job(job_id: str, db: Session = Depends(get_db)):  # Changed to string
     """
     Publish a job to the careers page
     Makes it visible on the public careers page
@@ -115,20 +116,20 @@ def publish_job(job_id: int, db: Session = Depends(get_db)):
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job.is_published = True
+    job.isPublished = True  # NeonDB field name
     db.commit()
     db.refresh(job)
     return job
 
 
 @router.post("/{job_id}/unpublish", response_model=JobResponse)
-def unpublish_job(job_id: int, db: Session = Depends(get_db)):
+def unpublish_job(job_id: str, db: Session = Depends(get_db)):  # Changed to string
     """Remove a job from the careers page"""
     job = db.query(Job).filter(Job.id == job_id).first()
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     
-    job.is_published = False
+    job.isPublished = False  # NeonDB field name
     db.commit()
     db.refresh(job)
     return job
@@ -143,20 +144,20 @@ def get_careers_page_jobs(db: Session = Depends(get_db)):
     This endpoint is for your company website's careers page
     """
     jobs = db.query(Job).filter(
-        Job.is_published == True,
-        Job.is_active == True
-    ).order_by(Job.created_at.desc()).all()
+        Job.isPublished == True,  # NeonDB field name
+        Job.isActive == True  # NeonDB field name
+    ).order_by(Job.createdAt.desc()).all()
     
     return jobs
 
 
 @router.get("/public/careers/{job_id}", response_model=JobPublicResponse)
-def get_public_job_details(job_id: int, db: Session = Depends(get_db)):
+def get_public_job_details(job_id: str, db: Session = Depends(get_db)):  # Changed to string
     """Get public job details for careers page"""
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.is_published == True,
-        Job.is_active == True
+        Job.isPublished == True,  # NeonDB field name
+        Job.isActive == True  # NeonDB field name
     ).first()
     
     if not job:

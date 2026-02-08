@@ -1,58 +1,92 @@
 """
 Pydantic schemas for Job API
+Updated for NeonDB JobPost table compatibility
 """
-from pydantic import BaseModel
-from typing import Optional, List
+import uuid
+from pydantic import BaseModel, field_validator
+from typing import Optional, List, Union
 from datetime import datetime
 
 
 class JobBase(BaseModel):
+    """Base job schema - compatible with NeonDB JobPost table"""
     title: str
-    department: Optional[str] = None
-    location: Optional[str] = None
-    job_type: Optional[str] = "Full-time"
-    experience_level: Optional[str] = None
-    min_experience_years: Optional[int] = 0
-    max_experience_years: Optional[int] = 10
-    salary_min: Optional[float] = None
-    salary_max: Optional[float] = None
-    description: str
-    requirements: str
-    responsibilities: Optional[str] = None
-    benefits: Optional[str] = None
-    deadline: Optional[datetime] = None
+    description: Optional[str] = None
+    requirements: Optional[Union[str, List[str]]] = None
+    
+    @field_validator('requirements', mode='before')
+    @classmethod
+    def convert_requirements(cls, v):
+        """Convert list to string if needed"""
+        if isinstance(v, list):
+            return '\n'.join(v)
+        return v
 
 
 class JobCreate(JobBase):
-    pass
+    """Schema for creating a new job"""
+    id: Optional[str] = None  # Will be auto-generated if not provided
+    
+    @field_validator('id', mode='before')
+    @classmethod
+    def generate_id(cls, v):
+        if v is None:
+            return str(uuid.uuid4())[:25]
+        return v
 
 
 class JobUpdate(BaseModel):
+    """Schema for updating a job"""
     title: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = None
-    job_type: Optional[str] = None
-    experience_level: Optional[str] = None
-    min_experience_years: Optional[int] = None
-    max_experience_years: Optional[int] = None
-    salary_min: Optional[float] = None
-    salary_max: Optional[float] = None
+    jobType: Optional[str] = None
+    experienceLevel: Optional[str] = None
+    minExperienceYears: Optional[int] = None
+    maxExperienceYears: Optional[int] = None
+    salaryMin: Optional[float] = None
+    salaryMax: Optional[float] = None
     description: Optional[str] = None
     requirements: Optional[str] = None
     responsibilities: Optional[str] = None
     benefits: Optional[str] = None
-    is_active: Optional[bool] = None
-    is_published: Optional[bool] = None
+    isActive: Optional[bool] = None
+    isPublished: Optional[bool] = None
     deadline: Optional[datetime] = None
 
 
-class JobResponse(JobBase):
-    id: int
-    is_active: bool
-    is_published: bool
-    created_at: datetime
-    updated_at: datetime
+class JobResponse(BaseModel):
+    """Response schema for job details - minimal to match NeonDB"""
+    id: str
+    title: str
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    createdAt: Optional[datetime] = None
+    
+    # Optional fields with defaults for backwards compatibility
+    department: Optional[str] = None
+    location: Optional[str] = "Remote"
+    jobType: Optional[str] = "Full-time"
+    experienceLevel: Optional[str] = "Mid-level"
+    minExperienceYears: Optional[int] = 0
+    maxExperienceYears: Optional[int] = 10
+    salaryMin: Optional[float] = None
+    salaryMax: Optional[float] = None
+    responsibilities: Optional[str] = None
+    benefits: Optional[str] = None
+    isActive: Optional[bool] = True
+    isPublished: Optional[bool] = True
+    updatedAt: Optional[datetime] = None
+    deadline: Optional[datetime] = None
     application_count: Optional[int] = 0
+    
+    @field_validator('requirements', mode='before')
+    @classmethod
+    def convert_requirements(cls, v):
+        """Convert list to string if needed"""
+        if isinstance(v, list):
+            return '\n'.join(v)
+        return v
     
     class Config:
         from_attributes = True
@@ -60,17 +94,26 @@ class JobResponse(JobBase):
 
 class JobPublicResponse(BaseModel):
     """For public careers page - limited info"""
-    id: int
+    id: str
     title: str
-    department: Optional[str]
-    location: Optional[str]
-    job_type: Optional[str]
-    experience_level: Optional[str]
-    description: str
-    requirements: str
-    responsibilities: Optional[str]
-    benefits: Optional[str]
-    deadline: Optional[datetime]
+    description: Optional[str] = None
+    requirements: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = "Remote"
+    jobType: Optional[str] = "Full-time"
+    experienceLevel: Optional[str] = "Mid-level"
+    responsibilities: Optional[str] = None
+    benefits: Optional[str] = None
+    deadline: Optional[datetime] = None
+    createdAt: Optional[datetime] = None
+    
+    @field_validator('requirements', mode='before')
+    @classmethod
+    def convert_requirements(cls, v):
+        """Convert list to string if needed"""
+        if isinstance(v, list):
+            return '\n'.join(v)
+        return v
     
     class Config:
         from_attributes = True

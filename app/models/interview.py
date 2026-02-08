@@ -1,5 +1,6 @@
 """
 Interview scheduling database model
+NeonDB compatible
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
@@ -23,20 +24,21 @@ class InterviewStatus(str, enum.Enum):
 
 
 class Interview(Base):
-    __tablename__ = "interviews"
+    """Interview scheduling - NeonDB compatible"""
+    __tablename__ = "Interview"  # Match NeonDB PascalCase naming
     
-    id = Column(Integer, primary_key=True, index=True)
-    application_id = Column(Integer, ForeignKey("applications.id"), nullable=False)
+    id = Column(String(50), primary_key=True, index=True)  # NeonDB uses string IDs
+    applicationId = Column(String(50), ForeignKey("JobApplication.id"), nullable=False)
     
     # Interview Details
     round = Column(String(20), default=InterviewRound.ROUND2.value)
-    interviewer_name = Column(String(200))  # SSE or interviewer name
-    interviewer_email = Column(String(200))
+    interviewerName = Column(String(200))  # SSE or interviewer name
+    interviewerEmail = Column(String(200))
     
     # Scheduling
-    scheduled_at = Column(DateTime, nullable=False)
-    duration_minutes = Column(Integer, default=60)
-    meeting_link = Column(String(500))  # Video call link
+    scheduledAt = Column(DateTime, nullable=False)
+    durationMinutes = Column(Integer, default=60)
+    meetingLink = Column(String(500))  # Video call link
     location = Column(String(200))  # For in-person interviews
     
     # Status
@@ -48,11 +50,36 @@ class Interview(Base):
     rating = Column(Integer, nullable=True)  # 1-5 rating
     
     # Timestamps
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    createdAt = Column(DateTime, default=datetime.utcnow)
+    updatedAt = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     # Relationships
     application = relationship("Application", back_populates="interviews")
     
+    # Aliases for backward compatibility
+    @property
+    def application_id(self):
+        return self.applicationId
+    
+    @property
+    def interviewer_name(self):
+        return self.interviewerName
+    
+    @property
+    def interviewer_email(self):
+        return self.interviewerEmail
+    
+    @property
+    def scheduled_at(self):
+        return self.scheduledAt
+    
+    @property
+    def duration_minutes(self):
+        return self.durationMinutes
+    
+    @property
+    def meeting_link(self):
+        return self.meetingLink
+    
     def __repr__(self):
-        return f"<Interview {self.round} for Application #{self.application_id}>"
+        return f"<Interview {self.round} for Application #{self.applicationId}>"

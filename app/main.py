@@ -26,11 +26,11 @@ from app.api import api_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Initialize database on startup"""
-    print("🚀 Starting Evalyn HR Automation Agent...")
+    print("[INFO] Starting Evalyn HR Automation Agent...")
     init_db()
-    print("✅ Database initialized")
+    print("[INFO] Database initialized")
     yield
-    print("👋 Shutting down...")
+    print("[INFO] Shutting down...")
 
 
 # Create FastAPI application

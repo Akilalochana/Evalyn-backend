@@ -1,5 +1,6 @@
 """
 Pydantic schemas for Application API
+Updated for NeonDB schema compatibility
 """
 from pydantic import BaseModel, EmailStr
 from typing import Optional, List
@@ -7,23 +8,41 @@ from datetime import datetime
 
 
 class ApplicationBase(BaseModel):
-    full_name: str
+    """Base application schema - matches NeonDB JobApplication table"""
+    name: str  # NeonDB uses 'name' not 'full_name'
     email: str
     phone: Optional[str] = None
     linkedin_url: Optional[str] = None
     portfolio_url: Optional[str] = None
-    cover_letter: Optional[str] = None
+    coverLetter: Optional[str] = None  # NeonDB uses camelCase
 
 
 class ApplicationCreate(ApplicationBase):
-    job_id: int
+    jobId: str  # NeonDB uses string IDs
 
 
-class ApplicationResponse(ApplicationBase):
-    id: int
-    job_id: int
+class ApplicationResponse(BaseModel):
+    """Response schema for applications"""
+    id: str
+    jobId: Optional[str] = None
+    name: str
+    email: str
+    phone: Optional[str] = None
     status: str
-    applied_at: datetime
+    createdAt: Optional[datetime] = None
+    
+    # Aliases for backward compatibility
+    @property
+    def full_name(self):
+        return self.name
+    
+    @property
+    def job_id(self):
+        return self.jobId
+    
+    @property
+    def applied_at(self):
+        return self.createdAt
     
     class Config:
         from_attributes = True
@@ -31,13 +50,14 @@ class ApplicationResponse(ApplicationBase):
 
 class ApplicationDetailResponse(ApplicationResponse):
     """Full details including AI screening results"""
-    cv_file_path: Optional[str]
-    ai_score: Optional[float]
-    ai_summary: Optional[str]
-    ai_strengths: Optional[str]
-    ai_weaknesses: Optional[str]
-    skills_matched: Optional[str]
-    screening_completed_at: Optional[datetime]
+    resumeUrl: Optional[str] = None
+    coverLetter: Optional[str] = None
+    ai_score: Optional[float] = None
+    ai_summary: Optional[str] = None
+    ai_strengths: Optional[str] = None
+    ai_weaknesses: Optional[str] = None
+    skills_matched: Optional[str] = None
+    screening_completed_at: Optional[datetime] = None
     
     class Config:
         from_attributes = True
@@ -45,7 +65,7 @@ class ApplicationDetailResponse(ApplicationResponse):
 
 class ApplicationScreeningResult(BaseModel):
     """Result from AI screening"""
-    application_id: int
+    application_id: str
     candidate_name: str
     email: str
     ai_score: float
@@ -58,7 +78,7 @@ class ApplicationScreeningResult(BaseModel):
 
 class BulkScreeningResponse(BaseModel):
     """Response for bulk screening operation"""
-    job_id: int
+    job_id: str
     total_applications: int
     screened_count: int
     shortlisted_candidates: List[ApplicationScreeningResult]

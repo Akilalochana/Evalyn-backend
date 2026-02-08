@@ -1,7 +1,9 @@
 """
 Interview Scheduling Service
 Handles scheduling interviews with SSE for shortlisted candidates
+Updated for NeonDB compatibility
 """
+import uuid
 from datetime import datetime, timedelta
 from typing import List, Optional
 from sqlalchemy.orm import Session
@@ -9,18 +11,20 @@ from app.models.application import Application, ApplicationStatus
 from app.models.interview import Interview, InterviewRound, InterviewStatus
 from app.models.job import Job
 from app.services.email_service import email_service
+from app.core.config import settings
 
 
 class InterviewScheduler:
     """
     Service for scheduling interviews with shortlisted candidates
     Integrates with SSE calendar and sends invitations
+    Updated for NeonDB schema
     """
     
     def schedule_single_interview(
         self,
         db: Session,
-        application_id: int,
+        application_id: str,  # Changed to string for NeonDB
         interviewer_name: str,
         interviewer_email: str,
         scheduled_at: datetime,
@@ -39,15 +43,19 @@ class InterviewScheduler:
         if not application:
             raise ValueError(f"Application {application_id} not found")
         
-        # Create interview record
+        # Generate unique interview ID
+        interview_id = str(uuid.uuid4())[:25]
+        
+        # Create interview record (using NeonDB field names)
         interview = Interview(
-            application_id=application_id,
+            id=interview_id,
+            applicationId=application_id,
             round=round,
-            interviewer_name=interviewer_name,
-            interviewer_email=interviewer_email,
-            scheduled_at=scheduled_at,
-            duration_minutes=duration_minutes,
-            meeting_link=meeting_link,
+            interviewerName=interviewer_name,
+            interviewerEmail=interviewer_email,
+            scheduledAt=scheduled_at,
+            durationMinutes=duration_minutes,
+            meetingLink=meeting_link,
             location=location,
             status=InterviewStatus.SCHEDULED.value
         )
@@ -61,7 +69,7 @@ class InterviewScheduler:
         db.refresh(interview)
         
         # Send interview invitation email
-        job = db.query(Job).filter(Job.id == application.job_id).first()
+        job = db.query(Job).filter(Job.id == application.jobId).first()
         if job:
             email_service.send_interview_invitation(application, interview, job)
         
@@ -90,7 +98,7 @@ class InterviewScheduler:
         
         # Get all shortlisted applications
         applications = db.query(Application).filter(
-            Application.job_id == job_id,
+            Application.jobId == job_id,
             Application.status == ApplicationStatus.SHORTLISTED.value
         ).order_by(Application.ai_score.desc()).all()
         
@@ -101,20 +109,22 @@ class InterviewScheduler:
         current_time = start_datetime
         
         for i, app in enumerate(applications):
-            # Generate unique meeting link if base provided
+            # Generate unique interview ID and meeting link
+            interview_id = str(uuid.uuid4())[:25]
             meeting_link = None
             if meeting_link_base:
                 meeting_link = f"{meeting_link_base}?candidate={app.id}"
             
-            # Create interview
+            # Create interview (using NeonDB field names)
             interview = Interview(
-                application_id=app.id,
+                id=interview_id,
+                applicationId=app.id,
                 round=InterviewRound.ROUND2.value,
-                interviewer_name=interviewer_name,
-                interviewer_email=interviewer_email,
-                scheduled_at=current_time,
-                duration_minutes=duration_minutes,
-                meeting_link=meeting_link,
+                interviewerName=interviewer_name,
+                interviewerEmail=interviewer_email,
+                scheduledAt=current_time,
+                durationMinutes=duration_minutes,
+                meetingLink=meeting_link,
                 status=InterviewStatus.SCHEDULED.value
             )
             
@@ -134,7 +144,7 @@ class InterviewScheduler:
         for interview in interviews:
             db.refresh(interview)
             app = db.query(Application).filter(
-                Application.id == interview.application_id
+                Application.id == interview.applicationId
             ).first()
             if app:
                 email_service.send_interview_invitation(app, interview, job)
@@ -167,11 +177,11 @@ class InterviewScheduler:
         
         # Send updated invitation
         application = db.query(Application).filter(
-            Application.id == interview.application_id
+            Application.id == interview.applicationId
         ).first()
         
         if application:
-            job = db.query(Job).filter(Job.id == application.job_id).first()
+            job = db.query(Job).filter(Job.id == application.jobId).first()
             if job:
                 email_service.send_interview_invitation(application, interview, job)
         
@@ -202,7 +212,7 @@ class InterviewScheduler:
         
         # Update application status
         application = db.query(Application).filter(
-            Application.id == interview.application_id
+            Application.id == interview.applicationId
         ).first()
         
         if application:
@@ -225,15 +235,15 @@ class InterviewScheduler:
         """Get all scheduled interviews for an SSE in a date range"""
         
         return db.query(Interview).filter(
-            Interview.interviewer_email == interviewer_email,
-            Interview.scheduled_at >= start_date,
-            Interview.scheduled_at <= end_date,
+            Interview.interviewerEmail == interviewer_email,
+            Interview.scheduledAt >= start_date,
+            Interview.scheduledAt <= end_date,
             Interview.status.in_([
                 InterviewStatus.SCHEDULED.value,
                 InterviewStatus.CONFIRMED.value,
                 InterviewStatus.RESCHEDULED.value
             ])
-        ).order_by(Interview.scheduled_at).all()
+        ).order_by(Interview.scheduledAt).all()
 
 
 # Singleton instance

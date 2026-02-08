@@ -1,10 +1,12 @@
 """
 Application/Candidate API Endpoints
 Handles candidate applications, CV uploads, and AI screening
+Updated for NeonDB and Vercel Blob Storage
 """
 import os
 import json
 import shutil
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -20,6 +22,7 @@ from app.schemas.application import (
 )
 from app.services.ai_agent import ai_agent
 from app.services.email_service import email_service
+from app.services.vercel_blob_service import vercel_blob_service
 
 router = APIRouter(prefix="/applications", tags=["Applications"])
 
@@ -32,7 +35,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 @router.post("/apply", response_model=ApplicationResponse, status_code=status.HTTP_201_CREATED)
 async def submit_application(
-    job_id: int = Form(...),
+    job_id: str = Form(...),  # Changed to string for NeonDB
     full_name: str = Form(...),
     email: str = Form(...),
     phone: Optional[str] = Form(None),
@@ -44,13 +47,14 @@ async def submit_application(
 ):
     """
     Submit a job application (Public endpoint for careers page)
-    Candidates use this to apply with their CV
+    - CV is uploaded to Vercel Blob storage
+    - Application is stored in NeonDB
     """
     # Verify job exists and is published
     job = db.query(Job).filter(
         Job.id == job_id,
-        Job.is_published == True,
-        Job.is_active == True
+        Job.isPublished == True,
+        Job.isActive == True
     ).first()
     
     if not job:
@@ -58,42 +62,49 @@ async def submit_application(
     
     # Check if already applied
     existing = db.query(Application).filter(
-        Application.job_id == job_id,
+        Application.jobId == job_id,
         Application.email == email
     ).first()
     
     if existing:
         raise HTTPException(status_code=400, detail="You have already applied for this position")
     
-    # Save CV file
+    # Validate file type
     file_ext = os.path.splitext(cv_file.filename)[1].lower()
     if file_ext not in [".pdf", ".docx", ".doc"]:
         raise HTTPException(status_code=400, detail="CV must be PDF or Word document")
     
-    # Create unique filename
+    # Read file content
+    file_content = await cv_file.read()
+    
+    # Upload to Vercel Blob
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = "".join(c for c in full_name if c.isalnum() or c == " ").replace(" ", "_")
-    filename = f"{safe_name}_{job_id}_{timestamp}{file_ext}"
-    file_path = os.path.join(UPLOAD_DIR, filename)
+    filename = f"{safe_name}_{job_id[:8]}_{timestamp}{file_ext}"
     
-    # Save file
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(cv_file.file, buffer)
+    resume_url = vercel_blob_service.upload_pdf(file_content, filename)
     
-    # Extract CV text
-    cv_text = ai_agent.extract_cv_text(file_path)
+    # Fallback to local storage if Vercel Blob fails
+    if not resume_url:
+        file_path = os.path.join(UPLOAD_DIR, filename)
+        with open(file_path, "wb") as buffer:
+            buffer.write(file_content)
+        resume_url = f"/api/uploads/resumes/{filename}"
     
-    # Create application
+    # Generate unique application ID
+    application_id = str(uuid.uuid4())[:25]
+    
+    # Create application with NeonDB field names
     application = Application(
-        job_id=job_id,
-        full_name=full_name,
+        id=application_id,
+        jobId=job_id,
+        name=full_name,  # NeonDB uses 'name'
         email=email,
         phone=phone,
         linkedin_url=linkedin_url,
         portfolio_url=portfolio_url,
-        cover_letter=cover_letter,
-        cv_file_path=file_path,
-        cv_text=cv_text,
+        coverLetter=cover_letter,  # NeonDB uses camelCase
+        resumeUrl=resume_url,  # Vercel Blob URL
         status=ApplicationStatus.PENDING.value
     )
     
@@ -108,7 +119,7 @@ async def submit_application(
 
 @router.get("/job/{job_id}", response_model=List[ApplicationDetailResponse])
 def get_job_applications(
-    job_id: int,
+    job_id: str,  # Changed to string for NeonDB
     status_filter: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
@@ -116,7 +127,7 @@ def get_job_applications(
     Get all applications for a job (HR Dashboard)
     Includes AI screening results
     """
-    query = db.query(Application).filter(Application.job_id == job_id)
+    query = db.query(Application).filter(Application.jobId == job_id)
     
     if status_filter:
         query = query.filter(Application.status == status_filter)
@@ -126,7 +137,7 @@ def get_job_applications(
 
 
 @router.get("/{application_id}", response_model=ApplicationDetailResponse)
-def get_application(application_id: int, db: Session = Depends(get_db)):
+def get_application(application_id: str, db: Session = Depends(get_db)):  # Changed to string
     """Get detailed application information"""
     application = db.query(Application).filter(
         Application.id == application_id
@@ -140,7 +151,7 @@ def get_application(application_id: int, db: Session = Depends(get_db)):
 
 @router.post("/job/{job_id}/screen", response_model=BulkScreeningResponse)
 async def screen_applications(
-    job_id: int,
+    job_id: str,  # Changed to string for NeonDB
     top_n: Optional[int] = None,
     background_tasks: BackgroundTasks = None,
     db: Session = Depends(get_db)
@@ -159,7 +170,7 @@ async def screen_applications(
     
     # Count pending applications
     pending_count = db.query(Application).filter(
-        Application.job_id == job_id,
+        Application.jobId == job_id,
         Application.status == ApplicationStatus.PENDING.value
     ).count()
     
@@ -184,7 +195,7 @@ async def screen_applications(
         skills = json.loads(app.skills_matched) if app.skills_matched else []
         shortlisted_results.append(ApplicationScreeningResult(
             application_id=app.id,
-            candidate_name=app.full_name,
+            candidate_name=app.name,  # NeonDB uses 'name'
             email=app.email,
             ai_score=app.ai_score or 0,
             ai_summary=app.ai_summary or "",
@@ -205,7 +216,7 @@ async def screen_applications(
 
 @router.post("/job/{job_id}/notify-shortlisted")
 async def notify_shortlisted_candidates(
-    job_id: int,
+    job_id: str,  # Changed to string for NeonDB
     db: Session = Depends(get_db)
 ):
     """
@@ -218,7 +229,7 @@ async def notify_shortlisted_candidates(
     
     # Get shortlisted applications
     shortlisted = db.query(Application).filter(
-        Application.job_id == job_id,
+        Application.jobId == job_id,
         Application.status == ApplicationStatus.SHORTLISTED.value
     ).all()
     
@@ -243,7 +254,7 @@ async def notify_shortlisted_candidates(
 
 @router.put("/{application_id}/status")
 def update_application_status(
-    application_id: int,
+    application_id: str,  # Changed to string for NeonDB
     new_status: str,
     db: Session = Depends(get_db)
 ):
@@ -270,7 +281,7 @@ def update_application_status(
 
 
 @router.get("/job/{job_id}/statistics")
-def get_job_application_statistics(job_id: int, db: Session = Depends(get_db)):
+def get_job_application_statistics(job_id: str, db: Session = Depends(get_db)):  # Changed to string
     """Get application statistics for a job"""
     from sqlalchemy import func
     
@@ -283,14 +294,14 @@ def get_job_application_statistics(job_id: int, db: Session = Depends(get_db)):
         Application.status,
         func.count(Application.id)
     ).filter(
-        Application.job_id == job_id
+        Application.jobId == job_id  # Changed to NeonDB field name
     ).group_by(Application.status).all()
     
     stats = {status: count for status, count in status_counts}
     
     # Get average score
     avg_score = db.query(func.avg(Application.ai_score)).filter(
-        Application.job_id == job_id,
+        Application.jobId == job_id,  # Changed to NeonDB field name
         Application.ai_score.isnot(None)
     ).scalar()
     

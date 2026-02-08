@@ -1,5 +1,7 @@
 """
 Application/Candidate database model
+Matches NeonDB "JobApplication" table schema
+Only includes columns that exist in your NeonDB
 """
 from sqlalchemy import Column, Integer, String, Text, DateTime, Float, ForeignKey, Enum
 from sqlalchemy.orm import relationship
@@ -20,68 +22,109 @@ class ApplicationStatus(str, enum.Enum):
 
 
 class Application(Base):
-    __tablename__ = "applications"
+    """
+    Matches NeonDB "JobApplication" table
+    Based on actual NeonDB columns: id, name, email, phone, resumeUrl, coverLetter, status, createdAt
+    """
+    __tablename__ = "JobApplication"  # Match NeonDB table name (PascalCase)
     
-    id = Column(Integer, primary_key=True, index=True)
-    job_id = Column(Integer, ForeignKey("jobs.id"), nullable=False)
-    
-    # Candidate Info
-    full_name = Column(String(200), nullable=False)
+    # Core columns from NeonDB
+    id = Column(String(50), primary_key=True, index=True)
+    name = Column(String(200), nullable=False)
     email = Column(String(200), nullable=False)
-    phone = Column(String(50))
-    linkedin_url = Column(String(500))
-    portfolio_url = Column(String(500))
-    
-    # CV Data
-    cv_file_path = Column(String(500))  # Path to uploaded CV
-    cv_text = Column(Text)  # Extracted text from CV
-    
-    # Cover Letter
-    cover_letter = Column(Text)
-    
-    # AI Screening Results (Original)
-    ai_score = Column(Float, default=0.0)  # Match percentage (0-100)
-    ai_summary = Column(Text)  # AI generated summary
-    ai_strengths = Column(Text)  # Matching strengths
-    ai_weaknesses = Column(Text)  # Gaps or concerns
-    skills_matched = Column(Text)  # JSON list of matched skills
-    
-    # ==== NEW: Bias-Aware Screening ====
-    blind_score = Column(Float, nullable=True)  # Score without personal data
-    full_score = Column(Float, nullable=True)  # Score with full CV
-    bias_delta = Column(Float, nullable=True)  # Difference (full - blind)
-    blind_evaluation = Column(Text, nullable=True)  # Blind eval summary
-    full_evaluation = Column(Text, nullable=True)  # Full eval summary
-    bias_analysis = Column(Text, nullable=True)  # JSON: detailed bias analysis
-    
-    # ==== NEW: Skill-Gap Detection ====
-    required_skills = Column(Text, nullable=True)  # JSON: skills from job
-    candidate_skills = Column(Text, nullable=True)  # JSON: skills from CV
-    missing_skills = Column(Text, nullable=True)  # JSON: skills candidate lacks
-    weak_skills = Column(Text, nullable=True)  # JSON: skills needing improvement
-    skill_gap_feedback = Column(Text, nullable=True)  # Feedback for candidate
-    skill_match_percentage = Column(Float, nullable=True)  # Skills match %
-    
-    # ==== NEW: Project-Based Evaluation ====
-    github_url = Column(String(500), nullable=True)  # GitHub repo link
-    project_file_path = Column(String(500), nullable=True)  # Uploaded project path
-    project_score = Column(Float, nullable=True)  # Project quality score (0-100)
-    code_quality_score = Column(Float, nullable=True)  # Code quality (0-100)
-    project_feedback = Column(Text, nullable=True)  # AI generated project feedback
-    project_analysis = Column(Text, nullable=True)  # JSON: detailed project analysis
-    final_composite_score = Column(Float, nullable=True)  # CV + Project combined
-    
-    # Status Tracking
+    phone = Column(String(50), nullable=True)
+    resumeUrl = Column(Text, nullable=True)  # URL to PDF in Vercel Blob storage
+    coverLetter = Column(Text, nullable=True)
     status = Column(String(50), default=ApplicationStatus.PENDING.value)
-    screening_completed_at = Column(DateTime, nullable=True)
+    createdAt = Column(DateTime, default=datetime.utcnow, nullable=True)
     
-    # Timestamps
-    applied_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    # Foreign key - may or may not exist in your NeonDB
+    jobId = Column(String(50), ForeignKey("JobPost.id"), nullable=True)
+    
+    # AI Screening Results - we'll store these locally (add these columns to NeonDB if needed)
+    # If these columns don't exist yet, the workflow will fail when trying to save
+    # For now, we'll handle them as transient attributes
     
     # Relationships
     job = relationship("Job", back_populates="applications")
     interviews = relationship("Interview", back_populates="application")
     
+    # Transient attributes for AI results (not stored in DB until columns are added)
+    _ai_score = None
+    _ai_summary = None
+    _ai_strengths = None
+    _ai_weaknesses = None
+    _skills_matched = None
+    _cv_text = None
+    
+    @property
+    def ai_score(self):
+        return getattr(self, '_ai_score', None)
+    
+    @ai_score.setter
+    def ai_score(self, value):
+        self._ai_score = value
+    
+    @property
+    def ai_summary(self):
+        return getattr(self, '_ai_summary', None)
+    
+    @ai_summary.setter
+    def ai_summary(self, value):
+        self._ai_summary = value
+    
+    @property
+    def ai_strengths(self):
+        return getattr(self, '_ai_strengths', None)
+    
+    @ai_strengths.setter
+    def ai_strengths(self, value):
+        self._ai_strengths = value
+    
+    @property
+    def ai_weaknesses(self):
+        return getattr(self, '_ai_weaknesses', None)
+    
+    @ai_weaknesses.setter
+    def ai_weaknesses(self, value):
+        self._ai_weaknesses = value
+    
+    @property
+    def skills_matched(self):
+        return getattr(self, '_skills_matched', None)
+    
+    @skills_matched.setter
+    def skills_matched(self, value):
+        self._skills_matched = value
+    
+    @property
+    def cv_text(self):
+        return getattr(self, '_cv_text', None)
+    
+    @cv_text.setter
+    def cv_text(self, value):
+        self._cv_text = value
+    
+    @property
+    def screening_completed_at(self):
+        return None
+    
+    # Aliases for backward compatibility
+    @property
+    def full_name(self):
+        return self.name
+    
+    @property
+    def cv_file_path(self):
+        return self.resumeUrl
+    
+    @property
+    def cover_letter(self):
+        return self.coverLetter
+    
+    @property
+    def applied_at(self):
+        return self.createdAt
+    
     def __repr__(self):
-        return f"<Application {self.full_name} for Job #{self.job_id}>"
+        return f"<Application {self.name} for Job #{self.jobId}>"

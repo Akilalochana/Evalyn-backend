@@ -4,15 +4,16 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# Database
+# Database - PostgreSQL (NeonDB)
 sqlalchemy>=2.0.25
-aiosqlite>=0.19.0  # For async SQLite (optional)
+psycopg2-binary>=2.9.9  # PostgreSQL driver for NeonDB
+aiosqlite>=0.19.0  # For async SQLite (optional/fallback)
 
 # Pydantic for validation
 pydantic>=2.5.0
 pydantic-settings>=2.1.0
 
-# Google Gemini for AI screening
+# Google Gemini for AI screening (Free tier: gemini-1.5-flash)
 google-generativeai>=0.3.0
 
 # CV/Document parsing
@@ -28,13 +29,15 @@ python-multipart>=0.0.6
 # Environment variables
 python-dotenv>=1.0.0
 
-# HTTP client (for webhooks/integrations)
+# HTTP client (for Vercel Blob API and webhooks)
 httpx>=0.26.0
 
 # Date/time handling
 python-dateutil>=2.8.2
 
+# UUID generation
+uuid6>=2024.1.12  # For better UUIDs (optional)
+
 # Testing (optional)
 pytest>=7.4.0
 pytest-asyncio>=0.23.0
-httpx>=0.26.0  # For test client
