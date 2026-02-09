@@ -1,43 +1,8 @@
-# Evalyn HR Automation Agent - Dependencies
-
-# Web Framework
-fastapi>=0.109.0
-uvicorn[standard]>=0.27.0
-
-# Database - PostgreSQL (NeonDB)
-sqlalchemy>=2.0.25
-psycopg2-binary>=2.9.9  # PostgreSQL driver for NeonDB
-aiosqlite>=0.19.0  # For async SQLite (optional/fallback)
-
-# Pydantic for validation
-pydantic>=2.5.0
-pydantic-settings>=2.1.0
-
-# Google Gemini for AI screening (Free tier: gemini-1.5-flash)
-google-generativeai>=0.3.0
-
-# CV/Document parsing
-pdfplumber>=0.10.0
-python-docx>=1.1.0
-
-# Email
-aiosmtplib>=3.0.0  # For async email (optional)
-
-# File uploads
-python-multipart>=0.0.6
-
-# Environment variables
-python-dotenv>=1.0.0
-
-# HTTP client (for Vercel Blob API and webhooks)
-httpx>=0.26.0
-
-# Date/time handling
-python-dateutil>=2.8.2
-
-# UUID generation
-uuid6>=2024.1.12  # For better UUIDs (optional)
-
-# Testing (optional)
-pytest>=7.4.0
-pytest-asyncio>=0.23.0
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+python-dotenv==1.0.0
+google-generativeai==0.3.2
+psycopg2-binary==2.9.9
+pdfplumber==0.10.3
+requests==2.31.0
