@@ -114,24 +114,29 @@ def download_pdf_text(pdf_url: str) -> str:
         # Resolve relative URLs
         full_url = resolve_url(pdf_url)
         if not full_url:
+            print("  PDF Error: No URL provided")
             return ""
         
         print(f"  Downloading PDF: {full_url[:80]}...")
         response = requests.get(full_url, timeout=30)
         response.raise_for_status()
+        print(f"  PDF: Downloaded {len(response.content)} bytes")
         
         pdf_bytes = BytesIO(response.content)
         text = ""
         
         with pdfplumber.open(pdf_bytes) as pdf:
-            for page in pdf.pages:
+            print(f"  PDF: {len(pdf.pages)} pages found")
+            for i, page in enumerate(pdf.pages):
                 page_text = page.extract_text()
                 if page_text:
                     text += page_text + "\n"
+                    print(f"  PDF: Page {i+1} extracted {len(page_text)} chars")
         
+        print(f"  PDF: Total extracted {len(text)} chars")
         return text.strip()
     except Exception as e:
-        print(f"Error extracting PDF: {e}")
+        print(f"  PDF Error: {e}")
         return ""
 
 
@@ -140,7 +145,10 @@ def analyze_cv_with_ai(cv_text: str, job: dict) -> dict:
     import time
     
     if not cv_text:
+        print("  AI Error: No CV text to analyze")
         return {"score": 0, "summary": "Could not read CV"}
+    
+    print(f"  AI: Analyzing CV ({len(cv_text)} chars)...")
     
     job_info = f"Title: {job.get('title', 'N/A')}\n"
     job_info += f"Description: {job.get('description', 'N/A')}\n"
@@ -165,19 +173,33 @@ Return ONLY a JSON object (no markdown, no explanation):
     max_retries = 3
     for attempt in range(max_retries):
         try:
+            print(f"  AI: Calling Gemini (attempt {attempt + 1})...")
             response = model.generate_content(prompt)
             text = response.text.strip()
+            print(f"  AI: Raw response: {text[:200]}...")
             
             if text.startswith("```"):
                 lines = text.split('\n')
                 text = '\n'.join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
             
             result = json.loads(text)
+            print(f"  AI: Score = {result.get('score', 0)}%")
             return result
+        except json.JSONDecodeError as e:
+            print(f"  AI: JSON parse error: {e}")
+            print(f"  AI: Text was: {text[:300]}")
+            # Try to extract score from text
+            import re
+            score_match = re.search(r'"score"\s*:\s*(\d+)', text)
+            if score_match:
+                return {"score": int(score_match.group(1)), "summary": "Parsed from response"}
+            return {"score": 50, "summary": "Could not parse AI response"}
         except Exception as e:
             error_str = str(e)
+            print(f"  AI Error: {error_str[:150]}")
             if "429" in error_str or "quota" in error_str.lower():
                 wait_time = 35 * (attempt + 1)
+                print(f"  AI: Rate limited, waiting {wait_time}s...")
                 time.sleep(wait_time)
                 continue
             else:
