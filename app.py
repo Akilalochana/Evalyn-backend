@@ -8,12 +8,10 @@ Endpoints:
 """
 import os
 import json
-import smtplib
 import requests
 import pdfplumber
+import resend
 from io import BytesIO
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -30,12 +28,16 @@ CORS(app)  # Enable CORS for frontend requests
 # Configuration
 DATABASE_URL = os.getenv("DATABASE_URL")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
-FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Your Company")
+
+# Resend API for sending emails (works on Render free tier)
+# Get your API key from: https://resend.com/api-keys
+RESEND_API_KEY = os.getenv("RESEND_API_KEY")
+FROM_EMAIL = os.getenv("FROM_EMAIL", "onboarding@resend.dev")
+
+# Initialize Resend
+if RESEND_API_KEY:
+    resend.api_key = RESEND_API_KEY
 
 # Frontend URL for resolving relative paths (set this in Render environment)
 FRONTEND_URL = os.getenv("FRONTEND_URL", "https://evalyn.vercel.app")
@@ -185,11 +187,11 @@ Return ONLY a JSON object (no markdown, no explanation):
 
 
 def send_email(to_email: str, candidate_name: str, job_title: str) -> bool:
-    """Send congratulations email"""
+    """Send congratulations email using Resend API"""
     try:
-        # Validate email settings
-        if not SMTP_USER or not SMTP_PASSWORD:
-            print(f"Email Error: SMTP credentials not configured")
+        # Validate Resend API key
+        if not RESEND_API_KEY:
+            print(f"Email Error: RESEND_API_KEY not configured")
             return False
         
         if not to_email or '@' not in to_email:
@@ -197,46 +199,35 @@ def send_email(to_email: str, candidate_name: str, job_title: str) -> bool:
             return False
         
         print(f"  Sending email to: {to_email}")
-        print(f"  SMTP: {SMTP_HOST}:{SMTP_PORT}")
         print(f"  From: {FROM_EMAIL}")
         
-        msg = MIMEMultipart()
-        msg['From'] = FROM_EMAIL
-        msg['To'] = to_email
-        msg['Subject'] = f"Congratulations! You've been shortlisted for {job_title}"
+        # Email content
+        html_content = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #7c3aed;">Congratulations! 🎉</h2>
+            <p>Dear {candidate_name},</p>
+            <p>We are pleased to inform you that you have been <strong>shortlisted</strong> for the position of <strong>{job_title}</strong> at {COMPANY_NAME}.</p>
+            <p>Your application stood out among many candidates, and we would like to invite you for the next round of our selection process.</p>
+            <p>Our HR team will contact you shortly with further details about the interview schedule.</p>
+            <br>
+            <p>Best regards,<br>
+            <strong>HR Team</strong><br>
+            {COMPANY_NAME}</p>
+        </div>
+        """
         
-        body = f"""
-Dear {candidate_name},
-
-Congratulations! We are pleased to inform you that you have been shortlisted for the position of {job_title} at {COMPANY_NAME}.
-
-Your application stood out among many candidates, and we would like to invite you for the next round of our selection process.
-
-Our HR team will contact you shortly with further details about the interview schedule.
-
-Best regards,
-HR Team
-{COMPANY_NAME}
-"""
-        msg.attach(MIMEText(body, 'plain'))
+        # Send email using Resend
+        params = {
+            "from": FROM_EMAIL,
+            "to": [to_email],
+            "subject": f"Congratulations! You've been shortlisted for {job_title}",
+            "html": html_content
+        }
         
-        # Handle SMTP password with spaces (Gmail App Passwords have spaces)
-        smtp_password = SMTP_PASSWORD.strip() if SMTP_PASSWORD else ""
-        
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
-            server.set_debuglevel(0)  # Set to 1 for debug output
-            server.starttls()
-            server.login(SMTP_USER, smtp_password)
-            server.send_message(msg)
-        
-        print(f"  Email sent successfully to {to_email}")
+        email = resend.Emails.send(params)
+        print(f"  Email sent successfully! ID: {email.get('id', 'N/A')}")
         return True
-    except smtplib.SMTPAuthenticationError as e:
-        print(f"Email Auth Error: {e} - Check SMTP_USER and SMTP_PASSWORD")
-        return False
-    except smtplib.SMTPException as e:
-        print(f"SMTP Error: {e}")
-        return False
+        
     except Exception as e:
         print(f"Email Error: {type(e).__name__}: {e}")
         return False
@@ -269,7 +260,7 @@ def health_check():
     return jsonify({
         "status": "healthy", 
         "service": "Evalyn AI Agent",
-        "smtp_configured": bool(SMTP_USER and SMTP_PASSWORD),
+        "email_configured": bool(RESEND_API_KEY),
         "gemini_configured": bool(GEMINI_API_KEY),
         "db_configured": bool(DATABASE_URL)
     })
@@ -277,7 +268,7 @@ def health_check():
 
 @app.route('/api/test-email', methods=['POST'])
 def test_email():
-    """Test email sending - use this to verify SMTP configuration"""
+    """Test email sending - use this to verify Resend configuration"""
     try:
         data = request.get_json()
         to_email = data.get('email')
