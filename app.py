@@ -37,6 +37,9 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
 FROM_EMAIL = os.getenv("FROM_EMAIL", SMTP_USER)
 COMPANY_NAME = os.getenv("COMPANY_NAME", "Your Company")
 
+# Frontend URL for resolving relative paths (set this in Render environment)
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://evalyn.vercel.app")
+
 # Initialize Gemini
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash-lite')
@@ -87,10 +90,32 @@ def get_applications(job_id: str) -> list:
     return [dict(app) for app in applications]
 
 
+def resolve_url(url: str) -> str:
+    """Resolve relative URLs to absolute URLs"""
+    if not url:
+        return ""
+    
+    # Already absolute URL
+    if url.startswith("http://") or url.startswith("https://"):
+        return url
+    
+    # Relative URL - prepend frontend URL
+    if url.startswith("/"):
+        return f"{FRONTEND_URL}{url}"
+    
+    return f"{FRONTEND_URL}/{url}"
+
+
 def download_pdf_text(pdf_url: str) -> str:
     """Download PDF and extract text"""
     try:
-        response = requests.get(pdf_url, timeout=30)
+        # Resolve relative URLs
+        full_url = resolve_url(pdf_url)
+        if not full_url:
+            return ""
+        
+        print(f"  Downloading PDF: {full_url[:80]}...")
+        response = requests.get(full_url, timeout=30)
         response.raise_for_status()
         
         pdf_bytes = BytesIO(response.content)
