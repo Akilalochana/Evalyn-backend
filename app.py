@@ -187,6 +187,19 @@ Return ONLY a JSON object (no markdown, no explanation):
 def send_email(to_email: str, candidate_name: str, job_title: str) -> bool:
     """Send congratulations email"""
     try:
+        # Validate email settings
+        if not SMTP_USER or not SMTP_PASSWORD:
+            print(f"Email Error: SMTP credentials not configured")
+            return False
+        
+        if not to_email or '@' not in to_email:
+            print(f"Email Error: Invalid email address: {to_email}")
+            return False
+        
+        print(f"  Sending email to: {to_email}")
+        print(f"  SMTP: {SMTP_HOST}:{SMTP_PORT}")
+        print(f"  From: {FROM_EMAIL}")
+        
         msg = MIMEMultipart()
         msg['From'] = FROM_EMAIL
         msg['To'] = to_email
@@ -207,14 +220,25 @@ HR Team
 """
         msg.attach(MIMEText(body, 'plain'))
         
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+        # Handle SMTP password with spaces (Gmail App Passwords have spaces)
+        smtp_password = SMTP_PASSWORD.strip() if SMTP_PASSWORD else ""
+        
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=30) as server:
+            server.set_debuglevel(0)  # Set to 1 for debug output
             server.starttls()
-            server.login(SMTP_USER, SMTP_PASSWORD)
+            server.login(SMTP_USER, smtp_password)
             server.send_message(msg)
         
+        print(f"  Email sent successfully to {to_email}")
         return True
+    except smtplib.SMTPAuthenticationError as e:
+        print(f"Email Auth Error: {e} - Check SMTP_USER and SMTP_PASSWORD")
+        return False
+    except smtplib.SMTPException as e:
+        print(f"SMTP Error: {e}")
+        return False
     except Exception as e:
-        print(f"Email Error: {e}")
+        print(f"Email Error: {type(e).__name__}: {e}")
         return False
 
 
@@ -242,7 +266,33 @@ def update_application_status(app_id: str, status: str):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
-    return jsonify({"status": "healthy", "service": "Evalyn AI Agent"})
+    return jsonify({
+        "status": "healthy", 
+        "service": "Evalyn AI Agent",
+        "smtp_configured": bool(SMTP_USER and SMTP_PASSWORD),
+        "gemini_configured": bool(GEMINI_API_KEY),
+        "db_configured": bool(DATABASE_URL)
+    })
+
+
+@app.route('/api/test-email', methods=['POST'])
+def test_email():
+    """Test email sending - use this to verify SMTP configuration"""
+    try:
+        data = request.get_json()
+        to_email = data.get('email')
+        
+        if not to_email:
+            return jsonify({"success": False, "message": "Email address required"}), 400
+        
+        success = send_email(to_email, "Test User", "Test Position")
+        
+        if success:
+            return jsonify({"success": True, "message": f"Test email sent to {to_email}"})
+        else:
+            return jsonify({"success": False, "message": "Failed to send email - check server logs"}), 500
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route('/api/ai-review/run', methods=['POST'])
